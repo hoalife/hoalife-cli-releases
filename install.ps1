@@ -11,9 +11,31 @@ $work = $null
 $generation = $null
 $committed = $false
 
+function Add-InstallerType([string]$Definition) {
+    if ($PSVersionTable.PSVersion.Major -ge 6) {
+        Add-Type -TypeDefinition $Definition
+        return
+    }
+    # Windows PowerShell's CodeDOM compiler can leave a random directory in
+    # TEMP. Give it an owned workspace and load the result in memory so every
+    # compiler artifact can be removed without touching unrelated temp files.
+    $compilerDirectory = Join-Path ([IO.Path]::GetTempPath()) ('hoalife-compile-' + [guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($compilerDirectory) | Out-Null
+    $compilerParameters = $null
+    try {
+        $compilerParameters = [CodeDom.Compiler.CompilerParameters]::new()
+        $compilerParameters.GenerateInMemory = $true
+        $compilerParameters.TempFiles = [CodeDom.Compiler.TempFileCollection]::new($compilerDirectory, $false)
+        Add-Type -TypeDefinition $Definition -CompilerParameters $compilerParameters
+    } finally {
+        if ($compilerParameters) { $compilerParameters.TempFiles.Dispose() }
+        Remove-Item -LiteralPath $compilerDirectory -Recurse -Force
+    }
+}
+
 function Get-NativeWindowsMachine {
     if (-not ('HOALifeInstaller.PlatformNative' -as [type])) {
-        Add-Type -TypeDefinition @'
+        Add-InstallerType -Definition @'
 using System;
 using System.Runtime.InteropServices;
 namespace HOALifeInstaller {
@@ -86,7 +108,7 @@ function Test-SameFile([string]$First, [string]$Second) {
 
 function Send-PathChangeNotification {
     if (-not ('HOALifeInstaller.NativeMethods' -as [type])) {
-        Add-Type -TypeDefinition @'
+        Add-InstallerType -Definition @'
 using System;
 using System.Runtime.InteropServices;
 namespace HOALifeInstaller {
