@@ -25,7 +25,70 @@ Use the named platform archive. GitHub's automatic **Source code** downloads con
 https://github.com/hoalife/hoalife-cli-releases/releases/download/<tag>/<asset>
 ```
 
-## Linux and macOS
+## Installer helpers
+
+The helpers download only your selected platform archive and its `SHA256SUMS` from this repository's versioned HTTPS release URLs. They check the manifest syntax, require exactly one matching checksum, verify SHA-256, and accept exactly four nonempty root regular files: the executable, `LICENSE.txt`, `THIRD_PARTY_NOTICES.txt`, and `README.txt`. Extra files, duplicate names, directories, links, and paths outside that layout are rejected before installation. They never run the downloaded binary, request administrator privileges, or change platform security settings.
+
+Review the helper after downloading it. Use the repository's `main` helper URL below; the version argument selects the binary release, not the helper revision. You may also download these scripts from a reviewed repository revision. Do not pipe the download directly into a shell.
+
+### Linux and macOS helper
+
+Requirements: a POSIX shell, `curl` with HTTPS support, GNU or BSD `tar` (including `-xO`), `awk`, `grep`, `mktemp`, standard file utilities, and either `sha256sum` or `shasum`. These are commonly available on Linux/macOS; minimal Linux installations may need curl and tar installed first. Python and Go are not required.
+
+```sh
+curl --fail --location --proto '=https' --proto-redir '=https' --output install.sh \
+  https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.sh
+# Read install.sh, then replace the placeholder with a published tag.
+sh install.sh --version REPLACE_WITH_PUBLISHED_TAG
+```
+
+The helper detects Linux/macOS and amd64/arm64. On Apple silicon, it selects arm64 even under Rosetta. Override detection or choose a destination with:
+
+```sh
+sh install.sh --version REPLACE_WITH_PUBLISHED_TAG --os darwin --arch arm64 \
+  --install-dir "$HOME/Applications/HOALife CLI/bin"
+```
+
+`--os` accepts `linux` or `darwin`; `--arch` accepts `amd64` or `arm64`. Overrides select the downloaded binary and do not make a foreign binary runnable on your host. The default destination is `$HOME/.local/bin`. The executable is a symlink to a complete installation under that directory's `.hoalife/<version>-<unique-id>/`, which retains the three notice files. Do not move the symlink alone. Repeating an identical install reuses the existing generation. Upgrades retain previous generations and their notices; the helper does not prune them automatically.
+
+The helper prints the directory to add to PATH but does not edit your shell configuration. For the default destination:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+command -v hoalife
+```
+
+Persist that line in your shell startup file (commonly `~/.zshrc` or `~/.bashrc`) and open a new terminal. For an override, substitute your chosen directory, keeping quotes around paths with spaces.
+
+### Windows helper
+
+Requirements: Windows PowerShell 5.1 or PowerShell 7+, HTTPS access with TLS 1.2+, and a writable user destination on a local filesystem that supports atomic file replacement (normally NTFS). Use your device's script execution policy; managed devices may require approval for a downloaded script. Do not disable security checks to run the helper.
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.ps1 -OutFile install.ps1
+# Read install.ps1, then replace the placeholder with a published tag.
+.\install.ps1 -Version REPLACE_WITH_PUBLISHED_TAG
+```
+
+The helper detects native Windows amd64/arm64, including ARM64 when supported by an emulated PowerShell process. To select explicitly, or choose a destination:
+
+```powershell
+.\install.ps1 -Version REPLACE_WITH_PUBLISHED_TAG -Arch arm64 -InstallDir "$HOME\Apps\HOALife CLI\bin"
+```
+
+`-Arch` accepts `amd64` or `arm64`. The default destination is `%LOCALAPPDATA%\Programs\HOALife\bin`. The executable is `hoalife.exe` in that directory, and the four verified archive files are retained under `.hoalife\<version>-<unique-id>\`. Previous generations and notices remain available after upgrades; an identical repeat install reuses a generation. A destination containing `;` is rejected because it cannot form a single PATH entry.
+
+By default the helper adds the destination once to the **user** PATH, preserving raw variable references and the existing registry value type, and updates PATH for the invoking PowerShell session. Comparisons ignore case and trailing separators. Open a new terminal and use `Get-Command hoalife` to confirm the chosen copy. Pass `-NoPathUpdate` to manage PATH yourself. A PATH write failure produces a warning with manual guidance after a successful installation. For destinations containing a literal `%`, installation succeeds but automatic PATH changes are skipped: Windows could expand part of the literal directory name into another path. Invoke `hoalife.exe` by its full quoted path (for example, `& "$HOME\Apps\HOALife CLI\bin\hoalife.exe" --help`) or choose a destination without percent signs.
+
+### Upgrades and failures
+
+Read the target release's notes, close running CLI commands, then rerun the helper with the new explicit version and the same destination. Verify `hoalife --version` and `hoalife --help` yourself using the checks below. Neither helper edits profiles or other CLI configuration, or removes unrelated files. Keep your previous verified archive and notices if you need to downgrade, and read compatibility guidance before doing so.
+
+Invalid arguments, unsupported systems, missing releases, failed downloads, checksum failures, or unsafe archives stop installation. Temporary downloads and incomplete staging files are removed on normal errors and handled termination; forced process termination or power loss may leave temporary files. New files are staged on the destination filesystem, and the executable changes only after staging succeeds. A failed replacement (including a locked Windows executable or denied write access) preserves the previous executable and its notices. Failed attempts can leave empty parent installation directories. Use a destination you control; do not run concurrently against the same destination or use shared, untrusted writable directories. The installers do not automatically execute or verify the real application's version.
+
+SHA-256 checks are against the unsigned release manifest; they do not provide code signing or notarization. See [signing and platform prompts](#signing-and-platform-prompts). The first binary release remains pending: offline fixture results are not evidence of a public download or a real CLI installation.
+
+## Manual fallback: Linux and macOS
 
 These commands use a POSIX shell, `curl`, and `tar`. Linux also needs `sha256sum`; macOS uses `shasum`. Work in an empty download directory. Set `os` and `arch` to your selection from the table:
 
@@ -58,6 +121,8 @@ shasum -a 256 -c "$asset.sha256"
 
 Continue only when verification exits successfully and reports `OK`. On a mismatch, discard the download and obtain the archive and manifest again from the same release. Do not extract or run the failed download.
 
+Before extraction, inspect `tar -tzf "$asset"` and `tar -tvzf "$asset"`. Require exactly the four distinct root files listed below, all regular files, with no directory entries, links, extra files, or path prefixes. Stop if anything differs. Prefer the helper for automated archive validation.
+
 Extract into a new directory and install for your user:
 
 ```sh
@@ -73,7 +138,7 @@ hoalife --help
 
 To keep this `PATH` setting, add `export PATH="$HOME/.local/bin:$PATH"` to the startup file used by your shell (commonly `~/.zshrc` for interactive zsh or `~/.bashrc` for interactive bash), then open a new terminal. Check `command -v hoalife` to confirm which copy runs. No administrator privileges are needed for this location.
 
-## Windows (PowerShell)
+## Manual fallback: Windows (PowerShell)
 
 Work in an empty download directory. Set `arch` from System type: `amd64` for x64 or `arm64` for ARM64.
 
@@ -96,6 +161,8 @@ Write-Output 'SHA-256 OK'
 ```
 
 Continue only after `SHA-256 OK`. On failure, discard the download and obtain the archive and manifest again from the same release.
+
+Before extraction, inspect the ZIP entries with a trusted archive viewer. Require exactly the four distinct root regular files listed below; reject links, directories, extra files, or nested paths. Prefer the helper for automated archive validation.
 
 ```powershell
 Expand-Archive -LiteralPath $asset -DestinationPath .\hoalife-extracted
@@ -134,7 +201,7 @@ Initial binaries are **not code-signed**, and macOS binaries are **not notarized
 
 ## Manual upgrades
 
-There is no automatic updater or package-manager channel. To upgrade:
+There is no automatic updater or package-manager channel. You can rerun the helper as described above. For the manual fallback, upgrade as follows:
 
 1. Read the new release's notes for behavior changes and compatibility guidance. Record your current `hoalife --version` and executable path.
 2. Close running CLI commands. Download the new version's archive **and its own** `SHA256SUMS` into a fresh directory. Repeat the checks above before extracting.
