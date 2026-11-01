@@ -25,10 +25,8 @@ Follow the [Windows, macOS, and Linux installation and manual upgrade guide](INS
 Install the published `v0.1.0` release, or substitute another published stable tag:
 
 ```sh
-# Linux/macOS: download and review the helper before running it.
-curl --fail --location --proto '=https' --proto-redir '=https' --output install.sh \
-  https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.sh
-sh install.sh --version v0.1.0
+# Linux/macOS: install without retaining the helper script.
+bash -o pipefail -c 'curl --fail --location --proto "=https" --proto-redir "=https" https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.sh | bash -s -- --version v0.1.0'
 ```
 
 ```powershell

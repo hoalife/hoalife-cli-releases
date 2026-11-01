@@ -29,24 +29,20 @@ https://github.com/hoalife/hoalife-cli-releases/releases/download/<tag>/<asset>
 
 The helpers download only your selected platform archive and its `SHA256SUMS` from this repository's versioned HTTPS release URLs. They check the manifest syntax, require exactly one matching checksum, verify SHA-256, and accept exactly four nonempty root regular files: the executable, `LICENSE.txt`, `THIRD_PARTY_NOTICES.txt`, and `README.txt`. Extra files, duplicate names, directories, links, and paths outside that layout are rejected before installation. They never run the downloaded binary, request administrator privileges, or change platform security settings.
 
-Review the helper after downloading it. Use the repository's `main` helper URL below; the version argument selects the binary release, not the helper revision. You may also download these scripts from a reviewed repository revision. Do not pipe the download directly into a shell.
+Use the repository's `main` helper URL below; the version argument selects the binary release, not the helper revision. If you want to review the helper first, download it to a file or use a reviewed repository revision. The one-line Linux/macOS example pipes the helper directly to the shell and does not retain a local copy.
 
 ### Linux and macOS helper
 
-Requirements: a POSIX shell, `curl` with HTTPS support, GNU or BSD `tar` (including `-xO`), `awk`, `grep`, `mktemp`, standard file utilities, and either `sha256sum` or `shasum`. These are commonly available on Linux/macOS; minimal Linux installations may need curl and tar installed first. Python and Go are not required.
+Requirements: Bash, `curl` with HTTPS support, GNU or BSD `tar` (including `-xO`), `awk`, `grep`, `mktemp`, standard file utilities, and either `sha256sum` or `shasum`. These are commonly available on Linux/macOS; minimal Linux installations may need Bash, curl, and tar installed first. Python and Go are not required.
 
 ```sh
-curl --fail --location --proto '=https' --proto-redir '=https' --output install.sh \
-  https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.sh
-# Read install.sh before running it.
-sh install.sh --version v0.1.0
+bash -o pipefail -c 'curl --fail --location --proto "=https" --proto-redir "=https" https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.sh | bash -s -- --version v0.1.0'
 ```
 
 The helper detects Linux/macOS and amd64/arm64. On Apple silicon, it selects arm64 even under Rosetta. Override detection or choose a destination with:
 
 ```sh
-sh install.sh --version v0.1.0 --os darwin --arch arm64 \
-  --install-dir "$HOME/Applications/HOALife CLI/bin"
+bash -o pipefail -c 'curl --fail --location --proto "=https" --proto-redir "=https" https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.sh | bash -s -- --version v0.1.0 --os darwin --arch arm64 --install-dir "$HOME/Applications/HOALife CLI/bin"'
 ```
 
 `--os` accepts `linux` or `darwin`; `--arch` accepts `amd64` or `arm64`. Overrides select the downloaded binary and do not make a foreign binary runnable on your host. The default destination is `$HOME/.local/bin`. The executable is a symlink to a complete installation under that directory's `.hoalife/<version>-<unique-id>/`, which retains the three notice files. Do not move the symlink alone. Repeating an identical install reuses the existing generation. Upgrades retain previous generations and their notices; the helper does not prune them automatically.
