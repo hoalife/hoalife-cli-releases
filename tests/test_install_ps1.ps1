@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw 'Windows is required for these native installer fixtures'
 }
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $installer = Join-Path (Split-Path $PSScriptRoot -Parent) 'install.ps1'
 $root = Join-Path ([IO.Path]::GetTempPath()) ('hoalife fixtures ' + [guid]::NewGuid().ToString('N'))
@@ -34,6 +35,7 @@ function Assert($Condition, [string]$Message) {
 # Override only the network boundary, leaving ZIP, hashing, filesystem, PATH,
 # architecture detection and replacement code real. No production test switches.
 function Invoke-WebRequest {
+    [CmdletBinding()]
     param($Uri, $OutFile, [switch]$UseBasicParsing, [switch]$PassThru, $MaximumRedirection)
     Assert ($MaximumRedirection -eq 0) 'redirects must be checked explicitly'
     Assert ($Uri.StartsWith('https://')) 'only HTTPS requests'
@@ -44,13 +46,21 @@ function Invoke-WebRequest {
     if ($script:mode -eq 'redirect-loop') {
         return [pscustomobject]@{ StatusCode = 302; Headers = @{ Location = $Uri } }
     }
-    if ($script:mode -eq 'redirect-https' -and $Uri.Contains('github.com/')) {
-        return [pscustomobject]@{ StatusCode = 302; Headers = @{ Location = ('https://fixtures.invalid/' + $Uri.Split('/')[-1]) } }
+    if ($script:mode -in @('redirect-https', 'redirect-classic-https') -and $Uri.Contains('github.com/')) {
+        $location = 'https://fixtures.invalid/' + $Uri.Split('/')[-1]
+        $headers = @{ Location = $location }
+        if ($script:mode -eq 'redirect-classic-https') {
+            $headers = [Net.WebHeaderCollection]::new()
+            $headers.Add('Location', $location)
+            Write-Error 'Simulated Windows PowerShell nonterminating redirect-limit error' -ErrorId MaximumRedirectExceeded
+        }
+        return [pscustomobject]@{ StatusCode = 302; Headers = $headers }
     }
     $name = $Uri.Split('/')[-1]
     $source = Join-Path $script:fixtures $name
     if (-not [IO.File]::Exists($source)) { return [pscustomobject]@{ StatusCode = 404; Headers = @{} } }
     [IO.File]::Copy($source, $OutFile, $true)
+    if ($script:mode -eq 'success-with-error') { Write-Error 'Simulated failed download reporting HTTP 200' }
     return [pscustomobject]@{ StatusCode = 200; Headers = @{} }
 }
 
@@ -115,6 +125,7 @@ try {
     Invoke-Installer @{ Arch = '386' } -Fail
     Invoke-Installer @{ Version = 'v1.99.99' } -Fail
     Invoke-Installer @{ InstallDir = "$dest;other" } -Fail
+    Invoke-Installer @{ InstallDir = "Env:\HOALIFE_INSTALLER_TEST" } -Fail
     foreach ($badManifest in @('', $manifest + $manifest, $manifest.Replace($asset, 'missing.zip'),
                               $manifest.Replace('  ', ' '), $manifest.ToUpperInvariant(),
                               ('0' * 64) + "  $asset`n", $manifest + 'malformed')) {
@@ -168,6 +179,9 @@ try {
     Invoke-Installer -Fail
     Assert-Prior
     $null = New-Fixture
+    $mode = 'success-with-error'
+    Invoke-Installer -Fail
+    Assert-Prior
     $mode = 'redirect-http'
     Invoke-Installer -Fail
     Assert-Prior
@@ -184,8 +198,10 @@ try {
     $locked = [IO.File]::Open((Join-Path $dest 'hoalife.exe'), [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
     try { Invoke-Installer -Fail } finally { $locked.Dispose() }
     Assert-Prior
-    $mode = 'redirect-https'
-    Invoke-Installer
+    foreach ($httpsMode in @('redirect-https', 'redirect-classic-https')) {
+        $mode = $httpsMode
+        Invoke-Installer
+    }
     $mode = 'normal'
     Assert ([IO.File]::ReadAllText((Join-Path $dest 'hoalife.exe')) -eq 'fixture hoalife.exe ') 'installed binary placement'
     $generations = @(Get-ChildItem -LiteralPath (Join-Path $dest '.hoalife') -Directory -Force)
@@ -204,14 +220,47 @@ try {
         Invoke-Installer @{ Arch = $architecture }
         Assert ($requests[$requests.Count - 2].EndsWith("_windows_$architecture.zip")) "selected $architecture"
     }
-    # Native architecture branch (including ARM64 when run on an ARM64 runner).
-    $native = $env:PROCESSOR_ARCHITECTURE
-    if ($env:PROCESSOR_ARCHITEW6432) { $native = $env:PROCESSOR_ARCHITEW6432 }
-    if ('System.Runtime.InteropServices.RuntimeInformation' -as [type]) { $native = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() }
-    $native = if ($native -ieq 'arm64') { 'arm64' } else { 'amd64' }
+    $parseTokens = $null; $parseErrors = $null
+    $installerAst = [Management.Automation.Language.Parser]::ParseFile($installer, [ref]$parseTokens, [ref]$parseErrors)
+    $selector = $installerAst.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-WindowsArchitecture' }, $true)
+    Assert ($null -ne $selector) 'native architecture selector exists'
+    & {
+        . ([scriptblock]::Create($selector.Extent.Text))
+        function Get-NativeWindowsMachine { return [uint16]0xaa64 }
+        Assert ((Get-WindowsArchitecture) -ceq 'arm64') 'native ARM64 under an emulated x64 process/runtime'
+        function Get-NativeWindowsMachine { return [uint16]0x8664 }
+        Assert ((Get-WindowsArchitecture) -ceq 'amd64') 'native AMD64 selection'
+        function Get-NativeWindowsMachine { return [uint16]0x014c }
+        $unsupported = $false
+        try { Get-WindowsArchitecture | Out-Null } catch { $unsupported = $true }
+        Assert $unsupported 'unsupported native machine rejected'
+    }
+    # Probe the real native branch against an independent Windows CIM source.
+    $nativeCode = Get-CimInstance -ClassName Win32_Processor | Select-Object -First 1 -ExpandProperty Architecture
+    $native = switch ($nativeCode) { 9 { 'amd64' }; 12 { 'arm64' }; default { throw "Unsupported fixture runner architecture: $nativeCode" } }
     $null = New-Fixture -Architecture $native
     Invoke-Installer @{ Arch = '' }
     Assert ($requests[$requests.Count - 2].EndsWith("_windows_$native.zip")) 'native architecture selection'
+    # PowerShell's current location can differ from the .NET process directory.
+    # A relative destination must not replace an executable in that old directory.
+    $shellDirectory = Join-Path $root 'PowerShell location'
+    $processDirectory = Join-Path $root 'process location'
+    [IO.Directory]::CreateDirectory($shellDirectory) | Out-Null
+    [IO.Directory]::CreateDirectory((Join-Path $processDirectory 'relative bin')) | Out-Null
+    $decoy = Join-Path $processDirectory 'relative bin\hoalife.exe'
+    [IO.File]::WriteAllText($decoy, 'unrelated decoy executable')
+    $originalLocation = Get-Location
+    $originalProcessDirectory = [Environment]::CurrentDirectory
+    try {
+        [Environment]::CurrentDirectory = $processDirectory
+        Set-Location -LiteralPath $shellDirectory
+        Invoke-Installer @{ Arch = ''; InstallDir = 'relative bin' }
+        Assert ([IO.File]::Exists((Join-Path $shellDirectory 'relative bin\hoalife.exe'))) 'relative destination follows PowerShell current location'
+        Assert ([IO.File]::ReadAllText($decoy) -ceq 'unrelated decoy executable') 'relative destination preserves executable in process directory'
+    } finally {
+        Set-Location -LiteralPath $originalLocation.Path
+        [Environment]::CurrentDirectory = $originalProcessDirectory
+    }
     # Literal percent-variable directory names must not become expandable PATH
     # entries or change the invoking session's PATH on repeated installations.
     $literalDir = Join-Path $root 'literal %TEMP% directory'

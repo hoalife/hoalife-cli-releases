@@ -70,13 +70,13 @@ Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/hoalif
 .\install.ps1 -Version REPLACE_WITH_PUBLISHED_TAG
 ```
 
-The helper detects native Windows amd64/arm64, including ARM64 when supported by an emulated PowerShell process. To select explicitly, or choose a destination:
+The helper queries Windows directly for native amd64/arm64, including ARM64 under an emulated PowerShell process or older .NET runtime. Automatic detection requires the Windows native-architecture API available in Windows 10 version 1709 / Windows Server version 1709 or newer; on older systems specify `-Arch` explicitly. To select explicitly, or choose a destination:
 
 ```powershell
 .\install.ps1 -Version REPLACE_WITH_PUBLISHED_TAG -Arch arm64 -InstallDir "$HOME\Apps\HOALife CLI\bin"
 ```
 
-`-Arch` accepts `amd64` or `arm64`. The default destination is `%LOCALAPPDATA%\Programs\HOALife\bin`. The executable is `hoalife.exe` in that directory, and the four verified archive files are retained under `.hoalife\<version>-<unique-id>\`. Previous generations and notices remain available after upgrades; an identical repeat install reuses a generation. A destination containing `;` is rejected because it cannot form a single PATH entry.
+`-Arch` accepts `amd64` or `arm64`. The default destination is `%LOCALAPPDATA%\Programs\HOALife\bin`. Relative `-InstallDir` paths resolve against the current PowerShell filesystem location. The executable is `hoalife.exe` in that directory, and the four verified archive files are retained under `.hoalife\<version>-<unique-id>\`. Previous generations and notices remain available after upgrades; an identical repeat install reuses a generation. A destination containing `;` is rejected because it cannot form a single PATH entry.
 
 By default the helper adds the destination once to the **user** PATH, preserving raw variable references and the existing registry value type, and updates PATH for the invoking PowerShell session. Comparisons ignore case and trailing separators. Open a new terminal and use `Get-Command hoalife` to confirm the chosen copy. Pass `-NoPathUpdate` to manage PATH yourself. A PATH write failure produces a warning with manual guidance after a successful installation. For destinations containing a literal `%`, installation succeeds but automatic PATH changes are skipped: Windows could expand part of the literal directory name into another path. Invoke `hoalife.exe` by its full quoted path (for example, `& "$HOME\Apps\HOALife CLI\bin\hoalife.exe" --help`) or choose a destination without percent signs.
 

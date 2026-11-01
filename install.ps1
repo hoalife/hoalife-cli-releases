@@ -11,21 +11,68 @@ $work = $null
 $generation = $null
 $committed = $false
 
+function Get-NativeWindowsMachine {
+    if (-not ('HOALifeInstaller.PlatformNative' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace HOALifeInstaller {
+    public static class PlatformNative {
+        [DllImport("kernel32.dll")]
+        public static extern IntPtr GetCurrentProcess();
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool IsWow64Process2(
+            IntPtr process, out ushort processMachine, out ushort nativeMachine);
+    }
+}
+'@
+    }
+    $processMachine = [UInt16]0
+    $nativeMachine = [UInt16]0
+    try {
+        $ok = [HOALifeInstaller.PlatformNative]::IsWow64Process2([HOALifeInstaller.PlatformNative]::GetCurrentProcess(), [ref]$processMachine, [ref]$nativeMachine)
+        if (-not $ok) { throw 'IsWow64Process2 failed' }
+    } catch { throw 'Cannot detect the native Windows architecture. Specify -Arch amd64 or -Arch arm64 (automatic detection requires Windows 10 version 1709 or newer).' }
+    return $nativeMachine
+}
+
+function Get-WindowsArchitecture {
+    # Native machine values come from Windows, not the emulated process or an
+    # older .NET runtime that may report x64 while running on Windows ARM64.
+    switch (Get-NativeWindowsMachine) {
+        0x8664 { return 'amd64' }
+        0xaa64 { return 'arm64' }
+        default { throw 'Unsupported native Windows architecture; only amd64 and arm64 are supported' }
+    }
+}
+
 function Get-PublicAsset([string]$Uri, [string]$OutFile) {
     # Handle redirects ourselves so HTTPS is required at every hop, including PS 5.1.
     for ($hop = 0; $hop -lt 8; $hop++) {
         if (([uri]$Uri).Scheme -cne 'https') { throw 'Refusing a non-HTTPS download/redirect' }
         $response = $null
+        # PS 5.1 emits a nonterminating redirect-limit error alongside the response.
+        # Capture errors and allow them only for an explicitly checked redirect.
+        $requestErrors = @()
+        $requestThrew = $false
         try {
-            $response = Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $OutFile -PassThru -MaximumRedirection 0
+            $response = Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $OutFile -PassThru -MaximumRedirection 0 -ErrorAction SilentlyContinue -ErrorVariable requestErrors
         } catch {
+            $requestThrew = $true
             $response = $_.Exception.Response
             if ($null -eq $response) { throw }
         }
         $status = [int]$response.StatusCode
-        if ($status -eq 200) { return }
+        if ($status -eq 200) {
+            if ($requestThrew -or $requestErrors.Count -ne 0) { throw 'Download failed despite HTTP 200' }
+            return
+        }
         if ($status -notin @(301, 302, 303, 307, 308)) { throw "Download failed (HTTP $status): $Uri" }
-        $location = [string]$response.Headers.Location
+        # Windows PowerShell exposes WebHeaderCollection, whose named headers
+        # are indexed entries rather than properties. PowerShell 7 uses HTTP headers.
+        if ($response.Headers -is [Net.WebHeaderCollection]) { $location = $response.Headers.Get('Location') }
+        else { $location = [string]$response.Headers.Location }
         if (-not $location) { throw 'Redirect has no Location header' }
         $Uri = ([uri]::new([uri]$Uri, $location)).AbsoluteUri
     }
@@ -97,20 +144,13 @@ function Add-UserPath([string]$Directory) {
 try {
     if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'This installer supports Windows only' }
     if ($Version -cnotmatch '\Av[01]\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\z') { throw 'Specify a stable version v0.MINOR.PATCH or v1.MINOR.PATCH (no leading zeroes)' }
-    if (-not $Arch) {
-        $nativeArch = $env:PROCESSOR_ARCHITECTURE
-        if ($env:PROCESSOR_ARCHITEW6432) { $nativeArch = $env:PROCESSOR_ARCHITEW6432 }
-        # .NET reports the native OS architecture even in an emulated process.
-        if ('System.Runtime.InteropServices.RuntimeInformation' -as [type]) {
-            $nativeArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-        }
-        switch ($nativeArch.ToLowerInvariant()) {
-            'amd64' { $Arch = 'amd64' }; 'x64' { $Arch = 'amd64' }; 'arm64' { $Arch = 'arm64' }
-            default { throw "Unsupported Windows architecture: $nativeArch" }
-        }
-    }
+    if (-not $Arch) { $Arch = Get-WindowsArchitecture }
     if ($Arch -cnotin @('amd64', 'arm64')) { throw "Unsupported architecture: $Arch" }
     if ([string]::IsNullOrWhiteSpace($InstallDir)) { throw 'InstallDir is required when LOCALAPPDATA is unavailable' }
+    $pathProvider = $null
+    $pathDrive = $null
+    $InstallDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($InstallDir, [ref]$pathProvider, [ref]$pathDrive)
+    if ($pathProvider.Name -cne 'FileSystem') { throw 'InstallDir must be a filesystem path' }
     $InstallDir = [IO.Path]::GetFullPath($InstallDir)
     if ($InstallDir.Contains(';')) { throw 'InstallDir cannot contain a semicolon (PATH separator)' }
     $asset = "hoalife_${Version}_windows_${Arch}.zip"
@@ -130,6 +170,7 @@ try {
     if ($count -ne 1) { throw 'Expected exactly one checksum entry for the selected archive' }
     if ((Get-FileHash -LiteralPath (Join-Path $work $asset) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw 'SHA-256 mismatch; refusing archive' }
 
+    Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [IO.Compression.ZipFile]::OpenRead((Join-Path $work $asset))
     try {
