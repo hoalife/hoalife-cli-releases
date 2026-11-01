@@ -102,7 +102,9 @@ function Invoke-Installer([hashtable]$Options = @{}, [switch]$Fail) {
     try { & $script:installer @params | Out-Null } catch { $failed = $true; $script:lastError = $_ }
     $failureContext = if ($script:lastError) { "$script:lastError`n$($script:lastError.InvocationInfo.PositionMessage)`n$($script:lastError.ScriptStackTrace)" } else { '' }
     Assert ($failed -eq [bool]$Fail) "expected failure=$Fail; last error: $failureContext"
-    Assert (@(Get-ChildItem -LiteralPath $env:TMP -Force).Count -eq 0) 'temporary files cleaned'
+    $remainingTemporaryFiles = @(Get-ChildItem -LiteralPath $env:TMP -Force)
+    $temporaryContext = if ($remainingTemporaryFiles.Count) { ($remainingTemporaryFiles | Select-Object Name, Length, Attributes | Out-String) + (Get-PSCallStack | Out-String) } else { '' }
+    Assert ($remainingTemporaryFiles.Count -eq 0) "temporary files cleaned; remaining: $temporaryContext"
     Assert ((Get-Content -LiteralPath (Join-Path $script:root 'profile sentinel') -Raw) -eq 'saved profiles') 'profiles untouched'
 }
 
