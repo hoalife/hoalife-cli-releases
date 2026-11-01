@@ -26,7 +26,7 @@ Install the published `v0.1.0` release, or substitute another published stable t
 
 ```sh
 # Linux/macOS: install without retaining the helper script.
-bash -o pipefail -c 'curl --fail --location --proto "=https" --proto-redir "=https" https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.sh | sh -s -- --version v0.1.0'
+curl --fail --location --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.sh | sh -s -- --version v0.1.0
 ```
 
 ```powershell

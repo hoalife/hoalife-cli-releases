@@ -33,16 +33,16 @@ Use the repository's `main` helper URL below; the version argument selects the b
 
 ### Linux and macOS helper
 
-Requirements: Bash, `curl` with HTTPS support, GNU or BSD `tar` (including `-xO`), `awk`, `grep`, `mktemp`, standard file utilities, and either `sha256sum` or `shasum`. These are commonly available on Linux/macOS; minimal Linux installations may need Bash, curl, and tar installed first. Python and Go are not required.
+Requirements: a POSIX shell, `curl` with HTTPS support, GNU or BSD `tar` (including `-xO`), `awk`, `grep`, `mktemp`, standard file utilities, and either `sha256sum` or `shasum`. These are commonly available on Linux/macOS; minimal Linux installations may need curl and tar installed first. Python and Go are not required.
 
 ```sh
-bash -o pipefail -c 'curl --fail --location --proto "=https" --proto-redir "=https" https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.sh | sh -s -- --version v0.1.0'
+curl --fail --location --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.sh | sh -s -- --version v0.1.0
 ```
 
 The helper detects Linux/macOS and amd64/arm64. On Apple silicon, it selects arm64 even under Rosetta. Override detection or choose a destination with:
 
 ```sh
-bash -o pipefail -c 'curl --fail --location --proto "=https" --proto-redir "=https" https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.sh | sh -s -- --version v0.1.0 --os darwin --arch arm64 --install-dir "$HOME/Applications/HOALife CLI/bin"'
+curl --fail --location --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.sh | sh -s -- --version v0.1.0 --os darwin --arch arm64 --install-dir "$HOME/Applications/HOALife CLI/bin"
 ```
 
 `--os` accepts `linux` or `darwin`; `--arch` accepts `amd64` or `arm64`. Overrides select the downloaded binary and do not make a foreign binary runnable on your host. The default destination is `$HOME/.local/bin`. The executable is a symlink to a complete installation under that directory's `.hoalife/<version>-<unique-id>/`, which retains the three notice files. Do not move the symlink alone. Repeating an identical install reuses the existing generation. Upgrades retain previous generations and their notices; the helper does not prune them automatically.
