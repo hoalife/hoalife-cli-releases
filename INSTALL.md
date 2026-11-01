@@ -1,10 +1,10 @@
 # Install or upgrade HOALife CLI
 
-**First release pending.** These instructions describe the release asset contract; there is no published version to download yet. After publication, use the [public releases page](https://github.com/hoalife/hoalife-cli-releases/releases). Downloads require no GitHub login, Go installation, or source access.
+Download [v0.1.0](https://github.com/hoalife/hoalife-cli-releases/releases/tag/v0.1.0) from the [public releases page](https://github.com/hoalife/hoalife-cli-releases/releases). Downloads require no GitHub login, Go installation, or source access.
 
 ## Choose a published version and platform
 
-Select an actual published stable release and copy its exact title/tag, including the leading `v`. Supported version labels are `v0.MINOR.PATCH` and `v1.MINOR.PATCH`, with numeric minor/patch values and no leading zeroes. `REPLACE_WITH_PUBLISHED_TAG` below is a placeholder: replace it before running the download commands. It is neither a selected first version nor a working release link. Do not use `latest` as the version value.
+Select an actual published stable release and copy its exact title/tag, including the leading `v`. Supported version labels are `v0.MINOR.PATCH` and `v1.MINOR.PATCH`, with numeric minor/patch values and no leading zeroes. The examples below use `v0.1.0`. To install a different published version, replace that value with its exact tag. Do not use `latest` as the version value.
 
 | Your system | Architecture | Asset name (`<tag>` is the exact release tag) |
 | --- | --- | --- |
@@ -38,14 +38,14 @@ Requirements: a POSIX shell, `curl` with HTTPS support, GNU or BSD `tar` (includ
 ```sh
 curl --fail --location --proto '=https' --proto-redir '=https' --output install.sh \
   https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.sh
-# Read install.sh, then replace the placeholder with a published tag.
-sh install.sh --version REPLACE_WITH_PUBLISHED_TAG
+# Read install.sh before running it.
+sh install.sh --version v0.1.0
 ```
 
 The helper detects Linux/macOS and amd64/arm64. On Apple silicon, it selects arm64 even under Rosetta. Override detection or choose a destination with:
 
 ```sh
-sh install.sh --version REPLACE_WITH_PUBLISHED_TAG --os darwin --arch arm64 \
+sh install.sh --version v0.1.0 --os darwin --arch arm64 \
   --install-dir "$HOME/Applications/HOALife CLI/bin"
 ```
 
@@ -66,14 +66,14 @@ Requirements: Windows PowerShell 5.1 or PowerShell 7+, HTTPS access with TLS 1.2
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.ps1 -OutFile install.ps1
-# Read install.ps1, then replace the placeholder with a published tag.
-.\install.ps1 -Version REPLACE_WITH_PUBLISHED_TAG
+# Read install.ps1 before running it.
+.\install.ps1 -Version v0.1.0
 ```
 
 The helper queries Windows directly for native amd64/arm64, including ARM64 under an emulated PowerShell process or older .NET runtime. Automatic detection requires the Windows native-architecture API available in Windows 10 version 1709 / Windows Server version 1709 or newer; on older systems specify `-Arch` explicitly. To select explicitly, or choose a destination:
 
 ```powershell
-.\install.ps1 -Version REPLACE_WITH_PUBLISHED_TAG -Arch arm64 -InstallDir "$HOME\Apps\HOALife CLI\bin"
+.\install.ps1 -Version v0.1.0 -Arch arm64 -InstallDir "$HOME\Apps\HOALife CLI\bin"
 ```
 
 `-Arch` accepts `amd64` or `arm64`. The default destination is `%LOCALAPPDATA%\Programs\HOALife\bin`. Relative `-InstallDir` paths resolve against the current PowerShell filesystem location. The executable is `hoalife.exe` in that directory, and the four verified archive files are retained under `.hoalife\<version>-<unique-id>\`. Previous generations and notices remain available after upgrades; an identical repeat install reuses a generation. A destination containing `;` is rejected because it cannot form a single PATH entry.
@@ -86,14 +86,14 @@ Read the target release's notes, close running CLI commands, then rerun the help
 
 Invalid arguments, unsupported systems, missing releases, failed downloads, checksum failures, or unsafe archives stop installation. Temporary downloads and incomplete staging files are removed on normal errors and handled termination; forced process termination or power loss may leave temporary files. New files are staged on the destination filesystem, and the executable changes only after staging succeeds. A failed replacement (including a locked Windows executable or denied write access) preserves the previous executable and its notices. Failed attempts can leave empty parent installation directories. Use a destination you control; do not run concurrently against the same destination or use shared, untrusted writable directories. The installers do not automatically execute or verify the real application's version.
 
-SHA-256 checks are against the unsigned release manifest; they do not provide code signing or notarization. See [signing and platform prompts](#signing-and-platform-prompts). The first binary release remains pending: offline fixture results are not evidence of a public download or a real CLI installation.
+SHA-256 checks are against the unsigned release manifest; they do not provide code signing or notarization. See [signing and platform prompts](#signing-and-platform-prompts). Offline fixture results alone are not evidence of a public download or a real CLI installation.
 
 ## Manual fallback: Linux and macOS
 
 These commands use a POSIX shell, `curl`, and `tar`. Linux also needs `sha256sum`; macOS uses `shasum`. Work in an empty download directory. Set `os` and `arch` to your selection from the table:
 
 ```sh
-version='REPLACE_WITH_PUBLISHED_TAG'
+version='v0.1.0'
 os=darwin   # macOS: darwin; Linux: linux
 arch=arm64  # Apple silicon/ARM64: arm64; Intel/AMD: amd64
 asset="hoalife_${version}_${os}_${arch}.tar.gz"
@@ -144,7 +144,7 @@ Work in an empty download directory. Set `arch` from System type: `amd64` for x6
 
 ```powershell
 $ErrorActionPreference = 'Stop'
-$version = 'REPLACE_WITH_PUBLISHED_TAG'
+$version = 'v0.1.0'
 $arch = 'amd64'
 $asset = "hoalife_${version}_windows_${arch}.zip"
 $base = "https://github.com/hoalife/hoalife-cli-releases/releases/download/$version"
