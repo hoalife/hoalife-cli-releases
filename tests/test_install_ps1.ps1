@@ -98,6 +98,7 @@ function Invoke-Installer([hashtable]$Options = @{}, [switch]$Fail) {
     $params = @{ Version = $script:version; Arch = 'amd64'; InstallDir = $script:dest; NoPathUpdate = $true }
     foreach ($key in $Options.Keys) { $params[$key] = $Options[$key] }
     $failed = $false
+    $script:lastError = $null
     try { & $script:installer @params | Out-Null } catch { $failed = $true; $script:lastError = $_ }
     $failureContext = if ($script:lastError) { "$script:lastError`n$($script:lastError.InvocationInfo.PositionMessage)`n$($script:lastError.ScriptStackTrace)" } else { '' }
     Assert ($failed -eq [bool]$Fail) "expected failure=$Fail; last error: $failureContext"
@@ -130,9 +131,18 @@ try {
     Invoke-Installer @{ Version = 'v1.99.99' } -Fail
     Invoke-Installer @{ InstallDir = "$dest;other" } -Fail
     Invoke-Installer @{ InstallDir = "Env:\HOALIFE_INSTALLER_TEST" } -Fail
-    foreach ($badManifest in @('', $manifest + $manifest, $manifest.Replace($asset, 'missing.zip'),
-                              $manifest.Replace('  ', ' '), $manifest.ToUpperInvariant(),
-                              ('0' * 64) + "  $asset`n", $manifest + 'malformed')) {
+    $badManifests = @(
+        ''
+        ($manifest + $manifest)
+        $manifest.Replace($asset, 'missing.zip')
+        $manifest.Replace('  ', ' ')
+        $manifest.ToUpperInvariant()
+        (('0' * 64) + "  $asset`n")
+        ($manifest + 'malformed')
+    )
+    Assert ($badManifests.Count -eq 7) 'all seven malformed manifest fixtures are present'
+    foreach ($badManifest in $badManifests) {
+        Assert ($badManifest -cne $manifest) 'negative manifest fixture must differ from the valid manifest'
         [IO.File]::WriteAllText((Join-Path $fixtures 'SHA256SUMS'), $badManifest)
         Invoke-Installer -Fail
         Assert-Prior
