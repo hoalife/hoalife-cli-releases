@@ -15,7 +15,7 @@ $env:TMP = Join-Path $root 'temporary files'
 $env:TEMP = $env:TMP
 $dest = Join-Path $root 'bin with spaces'
 $requests = [Collections.Generic.List[string]]::new()
-$mode = 'normal'
+$fixtureState = [pscustomobject]@{ Mode = 'normal'; Requests = $requests; Fixtures = $fixtures }
 $version = 'v0.2.3'
 $pathKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
 $hadUserPath = $pathKey.GetValueNames() -contains 'Path'
@@ -34,22 +34,22 @@ function Assert($Condition, [string]$Message) {
 
 # Override only the network boundary, leaving ZIP, hashing, filesystem, PATH,
 # architecture detection and replacement code real. No production test switches.
-function Invoke-WebRequest {
+$httpFixture = {
     [CmdletBinding()]
     param($Uri, $OutFile, [switch]$UseBasicParsing, [switch]$PassThru, $MaximumRedirection)
-    Assert ($MaximumRedirection -eq 0) 'redirects must be checked explicitly'
-    Assert ($Uri.StartsWith('https://')) 'only HTTPS requests'
-    $script:requests.Add($Uri)
-    if ($script:mode -eq 'redirect-http') {
+    if ($MaximumRedirection -ne 0) { throw 'Redirects must be checked explicitly' }
+    if (-not $Uri.StartsWith('https://')) { throw 'Only HTTPS requests are allowed' }
+    $fixtureState.Requests.Add($Uri)
+    if ($fixtureState.Mode -eq 'redirect-http') {
         return [pscustomobject]@{ StatusCode = 302; Headers = @{ Location = 'http://example.invalid/archive' } }
     }
-    if ($script:mode -eq 'redirect-loop') {
+    if ($fixtureState.Mode -eq 'redirect-loop') {
         return [pscustomobject]@{ StatusCode = 302; Headers = @{ Location = $Uri } }
     }
-    if ($script:mode -in @('redirect-https', 'redirect-classic-https') -and $Uri.Contains('github.com/')) {
+    if ($fixtureState.Mode -in @('redirect-https', 'redirect-classic-https') -and $Uri.Contains('github.com/')) {
         $location = 'https://fixtures.invalid/' + $Uri.Split('/')[-1]
         $headers = @{ Location = $location }
-        if ($script:mode -eq 'redirect-classic-https') {
+        if ($fixtureState.Mode -eq 'redirect-classic-https') {
             $headers = [Net.WebHeaderCollection]::new()
             $headers.Add('Location', $location)
             Write-Error 'Simulated Windows PowerShell nonterminating redirect-limit error' -ErrorId MaximumRedirectExceeded
@@ -57,12 +57,15 @@ function Invoke-WebRequest {
         return [pscustomobject]@{ StatusCode = 302; Headers = $headers }
     }
     $name = $Uri.Split('/')[-1]
-    $source = Join-Path $script:fixtures $name
+    $source = Join-Path $fixtureState.Fixtures $name
     if (-not [IO.File]::Exists($source)) { return [pscustomobject]@{ StatusCode = 404; Headers = @{} } }
     [IO.File]::Copy($source, $OutFile, $true)
-    if ($script:mode -eq 'success-with-error') { Write-Error 'Simulated failed download reporting HTTP 200' }
+    if ($fixtureState.Mode -eq 'success-with-error') { Write-Error 'Simulated failed download reporting HTTP 200' }
     return [pscustomobject]@{ StatusCode = 200; Headers = @{} }
 }
+# Bind mutable fixture state to the mock's module scope. The installer is a
+# separate script, so dynamic $script: variables would refer to that child.
+Set-Item -Path Function:Invoke-WebRequest -Value $httpFixture.GetNewClosure()
 
 function New-Fixture([string]$Tag = $script:version, [string]$Architecture = 'amd64', [string]$BadName = '', [int]$Attributes = 0, [string]$Suffix = '', [switch]$Missing, [switch]$EmptyBinary) {
     $asset = "hoalife_${Tag}_windows_${Architecture}.zip"
@@ -96,7 +99,8 @@ function Invoke-Installer([hashtable]$Options = @{}, [switch]$Fail) {
     foreach ($key in $Options.Keys) { $params[$key] = $Options[$key] }
     $failed = $false
     try { & $script:installer @params | Out-Null } catch { $failed = $true; $script:lastError = $_ }
-    Assert ($failed -eq [bool]$Fail) "expected failure=$Fail; last error: $script:lastError"
+    $failureContext = if ($script:lastError) { "$script:lastError`n$($script:lastError.InvocationInfo.PositionMessage)`n$($script:lastError.ScriptStackTrace)" } else { '' }
+    Assert ($failed -eq [bool]$Fail) "expected failure=$Fail; last error: $failureContext"
     Assert (@(Get-ChildItem -LiteralPath $env:TMP -Force).Count -eq 0) 'temporary files cleaned'
     Assert ((Get-Content -LiteralPath (Join-Path $script:root 'profile sentinel') -Raw) -eq 'saved profiles') 'profiles untouched'
 }
@@ -179,16 +183,16 @@ try {
     Invoke-Installer -Fail
     Assert-Prior
     $null = New-Fixture
-    $mode = 'success-with-error'
+    $fixtureState.Mode = 'success-with-error'
     Invoke-Installer -Fail
     Assert-Prior
-    $mode = 'redirect-http'
+    $fixtureState.Mode = 'redirect-http'
     Invoke-Installer -Fail
     Assert-Prior
-    $mode = 'redirect-loop'
+    $fixtureState.Mode = 'redirect-loop'
     Invoke-Installer -Fail
     Assert-Prior
-    $mode = 'normal'
+    $fixtureState.Mode = 'normal'
     # A file blocks directory creation; no elevated rights are needed to test it.
     $blocker = Join-Path $root 'not a directory'
     [IO.File]::WriteAllText($blocker, 'blocker')
@@ -199,10 +203,10 @@ try {
     try { Invoke-Installer -Fail } finally { $locked.Dispose() }
     Assert-Prior
     foreach ($httpsMode in @('redirect-https', 'redirect-classic-https')) {
-        $mode = $httpsMode
+        $fixtureState.Mode = $httpsMode
         Invoke-Installer
     }
-    $mode = 'normal'
+    $fixtureState.Mode = 'normal'
     Assert ([IO.File]::ReadAllText((Join-Path $dest 'hoalife.exe')) -eq 'fixture hoalife.exe ') 'installed binary placement'
     $generations = @(Get-ChildItem -LiteralPath (Join-Path $dest '.hoalife') -Directory -Force)
     Assert ($generations.Count -eq 1) 'one successful generation'
