@@ -41,7 +41,12 @@ out=
 while [ "$#" -gt 0 ]; do
   case $1 in --output) out=$2; shift 2 ;; *) url=$1; shift ;; esac
 done
-case $url in https://github.com/hoalife/hoalife-cli-releases/releases/download/v[01].*/*) ;; *) exit 92 ;; esac
+case $url in
+  https://github.com/hoalife/hoalife-cli-releases/releases/latest/download/SHA256SUMS)
+    cp "$FIXTURES/latest-SHA256SUMS" "$out"; exit ;;
+  https://github.com/hoalife/hoalife-cli-releases/releases/download/v[01].*/*) ;;
+  *) exit 92 ;;
+esac
 cp "$FIXTURES/${url##*/}" "$out"
 ''')
         self.shim('uname', '#!/bin/sh\ncase $1 in -s) echo "$HOST_OS" ;; -m) echo "$HOST_ARCH" ;; *) exit 1 ;; esac\n')
@@ -76,8 +81,9 @@ cp "$FIXTURES/${url##*/}" "$out"
         (self.downloads / 'SHA256SUMS').write_text(f'{digest}  {asset}\n' + 'a' * 64 + '  RELEASE_NOTES.md\n')
         return path
 
-    def run_install(self, *args, ok=True):
-        result = subprocess.run(['sh', str(ROOT / 'install.sh'), '--version', VERSION,
+    def run_install(self, *args, ok=True, latest=False):
+        version_args = [] if latest else ['--version', VERSION]
+        result = subprocess.run(['sh', str(ROOT / 'install.sh'), *version_args,
                                  '--install-dir', str(self.dest), *args],
                                 env=self.env, text=True, capture_output=True)
         if ok:
@@ -125,6 +131,39 @@ cp "$FIXTURES/${url##*/}" "$out"
                                 env=self.env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.dest / 'hoalife').is_file())
+
+    def test_latest_default_pins_archive_and_reuses_manifest(self):
+        for os_name in ('linux', 'darwin'):
+            for arch in ('amd64', 'arm64'):
+                with self.subTest(os=os_name, arch=arch):
+                    self.fixture(version='v1.2.3', os_name=os_name, arch=arch)
+                    (self.downloads / 'SHA256SUMS').rename(self.downloads / 'latest-SHA256SUMS')
+                    self.run_install('--os', os_name, '--arch', arch, latest=True)
+                    self.assertEqual((self.dest / 'hoalife').read_bytes(), FILES['hoalife'])
+                    requests = self.log.read_text().splitlines()[-2:]
+                    self.assertTrue(requests[0].endswith('/releases/latest/download/SHA256SUMS'))
+                    self.assertTrue(requests[1].endswith(f'/releases/download/v1.2.3/hoalife_v1.2.3_{os_name}_{arch}.tar.gz'))
+
+    def test_explicit_version_skips_latest(self):
+        self.run_install()
+        self.assertNotIn('/latest/', self.log.read_text())
+
+    def test_latest_failures_preserve_prior(self):
+        self.old_install()
+        self.run_install(latest=True, ok=False)  # Latest manifest unavailable.
+        self.assert_old()
+        valid = (self.downloads / 'SHA256SUMS').read_text()
+        for manifest in ('', valid * 2, valid.replace('_linux_', '_darwin_'),
+                         valid.replace(VERSION, 'v1.2.3-rc1'),
+                         valid + valid.replace(VERSION, 'v1.2.4'),
+                         valid + 'malformed\n', '0' * 64 + valid[64:]):
+            with self.subTest(manifest=manifest[:80]):
+                (self.downloads / 'latest-SHA256SUMS').write_text(manifest)
+                self.run_install(latest=True, ok=False)
+                self.assert_old()
+        (self.downloads / 'latest-SHA256SUMS').write_text(valid.replace(VERSION, 'v1.99.99'))
+        self.run_install(latest=True, ok=False)  # Selected archive unavailable.
+        self.assert_old()
 
     def test_platforms_and_explicit_overrides(self):
         for os_name in ('linux', 'darwin'):

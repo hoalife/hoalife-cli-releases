@@ -57,6 +57,7 @@ $httpFixture = {
         return [pscustomobject]@{ StatusCode = 302; Headers = $headers }
     }
     $name = $Uri.Split('/')[-1]
+    if ($Uri -eq 'https://github.com/hoalife/hoalife-cli-releases/releases/latest/download/SHA256SUMS') { $name = 'latest-SHA256SUMS' }
     $source = Join-Path $fixtureState.Fixtures $name
     if (-not [IO.File]::Exists($source)) { return [pscustomobject]@{ StatusCode = 404; Headers = @{} } }
     [IO.File]::Copy($source, $OutFile, $true)
@@ -94,8 +95,9 @@ function New-Fixture([string]$Tag = $script:version, [string]$Architecture = 'am
     return $path
 }
 
-function Invoke-Installer([hashtable]$Options = @{}, [switch]$Fail) {
+function Invoke-Installer([hashtable]$Options = @{}, [switch]$Fail, [switch]$Latest) {
     $params = @{ Version = $script:version; Arch = 'amd64'; InstallDir = $script:dest; NoPathUpdate = $true }
+    if ($Latest) { $params.Remove('Version') }
     foreach ($key in $Options.Keys) { $params[$key] = $Options[$key] }
     $failed = $false
     $script:lastError = $null
@@ -125,7 +127,7 @@ try {
     $path = New-Fixture
     $manifest = [IO.File]::ReadAllText((Join-Path $fixtures 'SHA256SUMS'))
     $asset = [IO.Path]::GetFileName($path)
-    foreach ($badVersion in @('latest', 'v2.0.0', 'v0.01.0', 'v1.0.01', 'v1.2.3-rc1', "v1.2.3`n", 'v1.2.3/../x')) {
+    foreach ($badVersion in @('', 'latest', 'v2.0.0', 'v0.01.0', 'v1.0.01', 'v1.2.3-rc1', "v1.2.3`n", 'v1.2.3/../x')) {
         Invoke-Installer @{ Version = $badVersion } -Fail
         Assert-Prior
     }
@@ -133,6 +135,15 @@ try {
     Invoke-Installer @{ Version = 'v1.99.99' } -Fail
     Invoke-Installer @{ InstallDir = "$dest;other" } -Fail
     Invoke-Installer @{ InstallDir = "Env:\HOALIFE_INSTALLER_TEST" } -Fail
+    Invoke-Installer -Latest -Fail # Latest manifest unavailable.
+    Assert-Prior
+    foreach ($latestManifest in @('', ($manifest + $manifest), $manifest.Replace('_windows_', '_linux_'),
+            $manifest.Replace($version, 'v1.2.3-rc1'), ($manifest + $manifest.Replace($version, 'v1.2.4')),
+            ($manifest + 'malformed'), (('0' * 64) + $manifest.Substring(64)), $manifest.Replace($version, 'v1.99.99'))) {
+        [IO.File]::WriteAllText((Join-Path $fixtures 'latest-SHA256SUMS'), $latestManifest)
+        Invoke-Installer -Latest -Fail
+        Assert-Prior
+    }
     $badManifests = @(
         ''
         ($manifest + $manifest)
@@ -227,6 +238,7 @@ try {
     }
     Invoke-Installer
     Assert (@(Get-ChildItem -LiteralPath (Join-Path $dest '.hoalife') -Directory -Force).Count -eq 1) 'repeat install reuses generation'
+    Assert ($requests[$requests.Count - 2].Contains("/releases/download/$version/")) 'explicit version skips latest lookup'
     $null = New-Fixture -Tag 'v1.0.0' -Suffix 'upgrade'
     Invoke-Installer @{ Version = 'v1.0.0' }
     Assert ([IO.File]::ReadAllText((Join-Path $dest 'hoalife.exe')).EndsWith('upgrade')) 'upgrade replacement'
@@ -235,6 +247,14 @@ try {
         $null = New-Fixture -Architecture $architecture
         Invoke-Installer @{ Arch = $architecture }
         Assert ($requests[$requests.Count - 2].EndsWith("_windows_$architecture.zip")) "selected $architecture"
+    }
+    foreach ($architecture in @('amd64', 'arm64')) {
+        $null = New-Fixture -Tag 'v1.2.3' -Architecture $architecture -Suffix 'latest'
+        Move-Item -LiteralPath (Join-Path $fixtures 'SHA256SUMS') -Destination (Join-Path $fixtures 'latest-SHA256SUMS') -Force
+        Invoke-Installer @{ Arch = $architecture } -Latest
+        Assert ($requests[$requests.Count - 2] -ceq 'https://github.com/hoalife/hoalife-cli-releases/releases/latest/download/SHA256SUMS') 'default resolves latest manifest'
+        Assert ($requests[$requests.Count - 1] -ceq "https://github.com/hoalife/hoalife-cli-releases/releases/download/v1.2.3/hoalife_v1.2.3_windows_$architecture.zip") 'latest pins archive URL and reuses manifest'
+        Assert ([IO.File]::ReadAllText((Join-Path $dest 'hoalife.exe')).EndsWith('latest')) 'latest binary installed'
     }
     $parseTokens = $null; $parseErrors = $null
     $installerAst = [Management.Automation.Language.Parser]::ParseFile($installer, [ref]$parseTokens, [ref]$parseErrors)

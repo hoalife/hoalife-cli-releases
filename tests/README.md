@@ -1,5 +1,7 @@
 # Offline installer verification
 
+The suites cover latest-release selection by default, versioned archive downloads using the resolved manifest, explicit version overrides, and latest-release lookup failures that preserve an existing installation.
+
 Run the POSIX suite on Linux/macOS with Python 3.9+:
 
 ```sh

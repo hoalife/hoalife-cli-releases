@@ -1,10 +1,11 @@
 #!/bin/sh
-# Install only public, explicitly versioned HOALife release assets.
+# Install public HOALife release assets; default to the latest release.
 set -eu
 umask 077
 fail() { printf '%s\n' "hoalife installer: $*" >&2; exit 1; }
 usage() {
-    echo 'Usage: sh install.sh --version v0.MINOR.PATCH|v1.MINOR.PATCH [--os linux|darwin] [--arch amd64|arm64] [--install-dir DIR]'
+    echo 'Usage: sh install.sh [--version v0.MINOR.PATCH|v1.MINOR.PATCH] [--os linux|darwin] [--arch amd64|arm64] [--install-dir DIR]'
+    echo 'Omit --version to install the latest release.'
 }
 version='' os='' arch='' destination=${HOME:?HOME is required}/.local/bin
 while [ "$#" -gt 0 ]; do
@@ -19,8 +20,10 @@ while [ "$#" -gt 0 ]; do
         *) fail "Unknown option: $1 (use --help)" ;;
     esac
 done
-case $version in *[!0-9v.]*) fail 'Invalid version characters' ;; esac
-printf '%s\n' "$version" | LC_ALL=C grep -Eq '^v[01]\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' || fail 'Specify a stable --version v0.MINOR.PATCH or v1.MINOR.PATCH (no leading zeroes)'
+if [ -n "$version" ]; then
+    case $version in *[!0-9v.]*) fail 'Invalid version characters' ;; esac
+    printf '%s\n' "$version" | LC_ALL=C grep -Eq '^v[01]\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' || fail 'Specify a stable --version v0.MINOR.PATCH or v1.MINOR.PATCH (no leading zeroes)'
+fi
 if [ -z "$os" ]; then
     case $(uname -s) in Linux) os=linux ;; Darwin) os=darwin ;; *) fail 'Unsupported operating system' ;; esac
 fi
@@ -51,9 +54,22 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
 work=$(mktemp -d "${TMPDIR:-/tmp}/hoalife-download.XXXXXXXX") || fail 'Cannot create temporary directory'
+if [ -z "$version" ]; then
+    curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output "$work/SHA256SUMS" \
+        https://github.com/hoalife/hoalife-cli-releases/releases/latest/download/SHA256SUMS || fail 'Cannot download the latest release manifest'
+    # Resolve once, then use a versioned archive URL and this same manifest so
+    # a new release published during installation cannot mix release assets.
+    asset=$(LC_ALL=C awk -v os="$os" -v arch="$arch" '
+        substr($0,67) ~ ("^hoalife_v[01]\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)_" os "_" arch "\\.tar\\.gz$") { count++; name=substr($0,67) }
+        END { if (count != 1) exit 1; print name }
+    ' "$work/SHA256SUMS") || fail 'Latest release manifest must contain exactly one supported archive for this platform'
+    version=${asset#hoalife_}
+    version=${version%_${os}_${arch}.tar.gz}
+fi
 asset=hoalife_${version}_${os}_${arch}.tar.gz
 base=https://github.com/hoalife/hoalife-cli-releases/releases/download/$version
 for name in "$asset" SHA256SUMS; do
+    [ "$name" != SHA256SUMS ] || [ ! -f "$work/SHA256SUMS" ] || continue
     curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output "$work/$name" "$base/$name" || fail "Download failed: $name (check the published version)"
 done
 # Validate the whole manifest grammar; require precisely one selected entry.
