@@ -44,3 +44,9 @@ hoalife --help
 hoalife profile new --name work
 hoalife accounts
 ```
+
+### Usage
+  ```sh
+  hoalife help
+  ```
+  - [Command reference](docs/commands.md): public command help, including all subcommands and flags.
