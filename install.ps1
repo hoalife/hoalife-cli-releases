@@ -1,7 +1,7 @@
 # Windows PowerShell 5.1+ / PowerShell 7+. No elevation required.
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][string]$Version,
+    [string]$Version,
     [string]$Arch,
     [string]$InstallDir = $(if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'Programs\HOALife\bin' }),
     [switch]$NoPathUpdate
@@ -165,7 +165,7 @@ function Add-UserPath([string]$Directory) {
 
 try {
     if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'This installer supports Windows only' }
-    if ($Version -cnotmatch '\Av[01]\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\z') { throw 'Specify a stable version v0.MINOR.PATCH or v1.MINOR.PATCH (no leading zeroes)' }
+    if ($PSBoundParameters.ContainsKey('Version') -and $Version -cnotmatch '\Av[01]\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\z') { throw 'Specify a stable version v0.MINOR.PATCH or v1.MINOR.PATCH (no leading zeroes)' }
     if (-not $Arch) { $Arch = Get-WindowsArchitecture }
     if ($Arch -cnotin @('amd64', 'arm64')) { throw "Unsupported architecture: $Arch" }
     if ([string]::IsNullOrWhiteSpace($InstallDir)) { throw 'InstallDir is required when LOCALAPPDATA is unavailable' }
@@ -175,14 +175,27 @@ try {
     if ($pathProvider.Name -cne 'FileSystem') { throw 'InstallDir must be a filesystem path' }
     $InstallDir = [IO.Path]::GetFullPath($InstallDir)
     if ($InstallDir.Contains(';')) { throw 'InstallDir cannot contain a semicolon (PATH separator)' }
-    $asset = "hoalife_${Version}_windows_${Arch}.zip"
-    $base = "https://github.com/hoalife/hoalife-cli-releases/releases/download/$Version"
     $work = Join-Path ([IO.Path]::GetTempPath()) ('hoalife-download-' + [guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($work) | Out-Null
     # Enable TLS 1.2 for older Windows PowerShell defaults; retain newer protocols.
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    if (-not $Version) {
+        Get-PublicAsset 'https://github.com/hoalife/hoalife-cli-releases/releases/latest/download/SHA256SUMS' (Join-Path $work 'SHA256SUMS')
+        # Resolve once and retain this manifest while fetching the versioned archive.
+        $versions = @(
+            foreach ($line in [IO.File]::ReadAllLines((Join-Path $work 'SHA256SUMS'))) {
+                if ($line -cmatch "\A[0-9a-f]{64}  hoalife_(v[01]\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))_windows_${Arch}\.zip\z") { $Matches[1] }
+            }
+        )
+        if ($versions.Count -ne 1) { throw 'Latest release manifest must contain exactly one supported archive for this platform' }
+        $Version = $versions[0]
+    }
+    $asset = "hoalife_${Version}_windows_${Arch}.zip"
+    $base = "https://github.com/hoalife/hoalife-cli-releases/releases/download/$Version"
     Get-PublicAsset "$base/$asset" (Join-Path $work $asset)
-    Get-PublicAsset "$base/SHA256SUMS" (Join-Path $work 'SHA256SUMS')
+    if (-not [IO.File]::Exists((Join-Path $work 'SHA256SUMS'))) {
+        Get-PublicAsset "$base/SHA256SUMS" (Join-Path $work 'SHA256SUMS')
+    }
     $expected = $null
     $count = 0
     foreach ($line in [IO.File]::ReadAllLines((Join-Path $work 'SHA256SUMS'))) {

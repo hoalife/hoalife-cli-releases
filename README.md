@@ -1,6 +1,6 @@
 # HOALife CLI downloads
 
-Prebuilt `hoalife` binaries are available on the **[releases page](https://github.com/hoalife/hoalife-cli-releases/releases)**. The first release is **[v0.1.0](https://github.com/hoalife/hoalife-cli-releases/releases/tag/v0.1.0)**.
+Prebuilt `hoalife` binaries are available on the **[latest release page](https://github.com/hoalife/hoalife-cli-releases/releases/latest)**.
 
 Published downloads are accessible without a GitHub account or access to the private source repository. Installation requires neither Go nor source access.
 
@@ -22,20 +22,20 @@ Each release includes version-specific notes, all six platform archives, and SHA
 
 Follow the [Windows, macOS, and Linux installation and manual upgrade guide](INSTALL.md). It covers the standalone [`install.sh`](install.sh) and [`install.ps1`](install.ps1) helpers, explicit version selection, SHA-256 verification, PATH, upgrades, and a manual fallback. The installers need no Go, GitHub login, or administrator privileges.
 
-Install the published `v0.1.0` release, or substitute another published stable tag:
+Install the latest release:
 
 ```sh
 # Linux/macOS: install without retaining the helper script.
-curl --fail --location --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.sh | sh -s -- --version v0.1.0
+curl --fail --location --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.sh | sh
 ```
 
 ```powershell
 # Windows PowerShell 5.1+ or PowerShell 7+: download and review first.
 Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/hoalife/hoalife-cli-releases/main/install.ps1 -OutFile install.ps1
-.\install.ps1 -Version v0.1.0
+.\install.ps1
 ```
 
-See [installation requirements and options](INSTALL.md#installer-helpers) before running these examples.
+To install a specific release, pass `--version <tag>` to the shell installer (`sh -s -- --version <tag>` when piping), or `-Version <tag>` to the PowerShell installer. Use the exact published tag, including its leading `v`. See [installation requirements and options](INSTALL.md#installer-helpers) before running these examples.
 
 After installation:
 
@@ -51,7 +51,7 @@ Profile creation opens your browser to sign in to HOALife. Production binaries c
 - [Command reference](docs/commands.md): public command help, including all subcommands and flags.
 - [Release-note template](RELEASE_NOTES_TEMPLATE.md): version metadata, user changes, asset links, and release limits.
 
-Initial binaries are unsigned and macOS binaries are not notarized. Package managers and automatic updates are deferred; rerun the installer with the new explicit version or use the manual upgrade procedure.
+Initial binaries are unsigned and macOS binaries are not notarized. Package managers and automatic updates are deferred; rerun the installer to get the latest release or use the manual upgrade procedure.
 
 Use the platform archives attached to a release. GitHub's automatically generated “Source code” archives contain this distribution repository's documentation, not the CLI source or an executable.
 
