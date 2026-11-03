@@ -44,19 +44,3 @@ hoalife --help
 hoalife profile new --name work
 hoalife accounts
 ```
-
-Profile creation opens your browser to sign in to HOALife. Production binaries connect to `https://api.hoalife.com/`.
-
-- [Usage guide](USAGE.md): OAuth and API keys, profiles, resource commands, JSON, unattended use, and shell completion.
-- [Command reference](docs/commands.md): public command help, including all subcommands and flags.
-- [Release-note template](RELEASE_NOTES_TEMPLATE.md): version metadata, user changes, asset links, and release limits.
-
-Initial binaries are unsigned and macOS binaries are not notarized. Package managers and automatic updates are deferred; rerun the installer to get the latest release or use the manual upgrade procedure.
-
-Use the platform archives attached to a release. GitHub's automatically generated “Source code” archives contain this distribution repository's documentation, not the CLI source or an executable.
-
-## Distribution contents
-
-Only public user documentation, installer helpers and their offline fixture tests, release notes, binary archives, checksums, and required license notices belong here. Release tags refer to this repository's documentation history; they must never import commits from the private source repositories. Build logs, credentials, application source, and private source history must not be published here.
-
-Required third-party notices accompany each binary and retain their respective license terms. Public download availability does not grant an open-source license to the HOALife application source.
